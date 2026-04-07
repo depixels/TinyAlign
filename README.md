@@ -2,7 +2,7 @@
 
 TinyAlign is a retrieval-augmented lightweight vision-language modeling project built on top of [TinyLLaVA Factory](https://github.com/TinyLLaVA/TinyLLaVA_Factory).
 
-This repository implements the codebase behind the paper [TinyAlign: Boosting Lightweight Vision-Language Models by Mitigating Modal Alignment Bottlenecks](https://arxiv.org/abs/2505.12884). According to the project status provided by the author, this work was accepted to Findings of ACL 2026.
+This repository contains the official code for [TinyAlign: Boosting Lightweight Vision-Language Models by Mitigating Modal Alignment Bottlenecks](https://arxiv.org/abs/2505.12884), accepted to Findings of ACL 2026.
 
 ## Overview
 
