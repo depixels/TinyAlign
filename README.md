@@ -55,6 +55,148 @@ You can now configure these paths through arguments instead of editing source co
 - `--retrieval_text_start`
 - `--retrieval_alpha`
 
+## How Memory Is Built
+
+This is the core addition of TinyAlign.
+
+The memory bank is not a plain text knowledge base. Each memory item is a paired `(key, value)` built from image-caption supervision data:
+
+- `key`: a compressed multimodal query vector
+- `value`: a compact latent representation produced by a Perceiver-style encoder
+
+In the current codebase, the reference implementation is scattered in `demo.py`, `demo1.py`, and `build_memory.ipynb`.
+
+### Memory construction pipeline
+
+For each image-text pair in the pretraining set:
+
+1. Encode the image with the TinyLLaVA vision tower and the original multimodal connector.
+2. Tokenize the paired caption text and obtain text token embeddings from the language model embedding table.
+3. Normalize image features and text features, then fuse them with a weighted mixture:
+   `multimodal_features = concat(alpha * image_features, (1 - alpha) * text_features)`
+4. Compute self-similarity over the fused multimodal sequence.
+5. Average the attention map and use it to compress the multimodal sequence into a single query vector.
+6. Feed the original image and caption into a Perceiver multimodal encoder.
+7. Use the Perceiver latent output as the retrieval value.
+8. Store the pair:
+   - key: compressed multimodal vector
+   - value: Perceiver latent tensor
+
+### What gets saved
+
+After collecting all pairs:
+
+- all keys are added into a FAISS index for nearest-neighbor search
+- all values are stored in a tensor file and aligned with FAISS ids
+
+At runtime, the model:
+
+1. rebuilds a query vector from the current input image and text
+2. retrieves top-`k` nearest memory items from FAISS
+3. concatenates the retrieved values
+4. projects them through `connector2`
+5. injects the projected retrieval features into the multimodal token sequence
+
+### Shape intuition from the current implementation
+
+From your current code:
+
+- the Perceiver value is typically a latent tensor shaped like `32 x 96`
+- multiple retrieved items are concatenated along the latent width dimension
+- `connector2` maps the retrieved latent features into the language model hidden size
+
+### Source files for the original memory-building code
+
+- `demo.py`: end-to-end prototype for constructing compressed keys and latent values
+- `demo1.py`: smaller-scale memory construction example
+- `build_memory.ipynb`: notebook experiments for building, saving, merging, and querying the memory bank
+
+### Reproducible memory-building script
+
+The repository now includes a standalone script:
+
+`scripts/build_memory_bank.py`
+
+It does two jobs:
+
+1. build shard files containing `(key, value)` pairs
+2. merge the shards into:
+   - `Merged_faiss.index`
+   - `Merged_LLaVA_Dataset_Memory.pt`
+
+### Expected dataset format
+
+By default, the script assumes a LLaVA-style JSON list where each sample contains:
+
+```json
+{
+  "image": "relative/path/to/image.jpg",
+  "conversations": [
+    {"from": "human", "value": "..."},
+    {"from": "gpt", "value": "caption or target text"}
+  ]
+}
+```
+
+If your caption is stored in another field, pass `--caption-field`.
+
+### Build commands
+
+Build shards and merge immediately:
+
+```bash
+python scripts/build_memory_bank.py \
+  --model-path /path/to/tinyllava_base_checkpoint \
+  --dataset-json /path/to/pretrain.json \
+  --image-root /path/to/images \
+  --perceiver-tokenizer /path/to/perceiver_tokenizer \
+  --output-dir /path/to/memory_bank \
+  --save-every 5000 \
+  --merge-after-build
+```
+
+If you already built shards and only want to merge them:
+
+```bash
+python scripts/build_memory_bank.py \
+  --output-dir /path/to/memory_bank \
+  --merge-only
+```
+
+### Output structure
+
+After a successful run, `output-dir` contains:
+
+```text
+memory_bank/
+  shards/
+    memory_shard_00000.pt
+    memory_shard_00001.pt
+    ...
+  Merged_faiss.index
+  Merged_LLaVA_Dataset_Memory.pt
+```
+
+The final merged tensor file stores:
+
+- `keys`: normalized compressed multimodal query vectors
+- `values`: Perceiver latent tensors aligned with FAISS ids
+
+### Plug the memory bank into training or inference
+
+Once the memory bank is built, point the model to it with:
+
+```bash
+--retrieval_memory_dir /path/to/memory_bank
+```
+
+Optionally override filenames if you changed them:
+
+```bash
+--retrieval_index_file Merged_faiss.index
+--retrieval_value_file Merged_LLaVA_Dataset_Memory.pt
+```
+
 ## Training
 
 Example command structure:
