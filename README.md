@@ -237,7 +237,6 @@ Make sure the released model config points to the correct retrieval memory direc
 
 - This repository keeps the original package name `tinyllava` for code compatibility.
 - The refactor removes local debug hooks and hard-coded absolute paths that were tied to the author's machine.
-- `gcc-10.2.0.tar.gz` is not part of the actual TinyAlign method and should not be included in a clean public release.
 
 ## Acknowledgement
 
